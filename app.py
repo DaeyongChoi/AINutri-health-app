@@ -11,8 +11,14 @@ import os
 st.set_page_config(page_title="든든 타이거", page_icon="🐯")
 
 # 2. [중요] API 키 설정 (여기에 본인 키를 넣어주세요!)
-API_KEY = "AIzaSyBfTxbOmHDo8Pqq1-o6QLUCam_x9AahbuQ"
-genai.configure(api_key=API_KEY)
+#API_KEY = "여기에 본인 키를 넣어주세요"
+#genai.configure(api_key=API_KEY)
+# API 키를 코드에 직접 적지 않고, 환경변수에서 꺼내옵니다.
+# (내 컴퓨터에서는 .env 파일을 쓰거나, 직접 설정해줘야 합니다)
+if "GOOGLE_API_KEY" in os.environ:
+    genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+else:
+    st.error("⚠️ API 키가 없습니다. 구글 클라우드 설정을 확인해주세요.")
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
 # 3. 데이터베이스 연결 (똑똑한 연결 방식)
