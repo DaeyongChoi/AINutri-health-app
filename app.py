@@ -11,21 +11,23 @@ import os
 # 1. 페이지 설정
 st.set_page_config(page_title="든든 타이거", page_icon="🐯")
 
-# 2. API 키 설정
+# 2. API 키 설정 (환경변수 사용)
 if "GOOGLE_API_KEY" in os.environ:
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 else:
     st.error("⚠️ API 키가 없습니다. 구글 클라우드 설정을 확인해주세요.")
 
-# 모델 설정 (시스템 프롬프트를 전역으로 설정하지 않고 각 기능에서 유연하게 사용)
+# 모델 설정
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
 # 3. 데이터베이스 연결
 if not firebase_admin._apps:
     try:
+        # 1) 내 컴퓨터: secrets.json 파일 사용
         if os.path.exists("secrets.json"):
             cred = credentials.Certificate("secrets.json")
             firebase_admin.initialize_app(cred)
+        # 2) 클라우드: 환경변수 FIREBASE_KEY 사용
         else:
             key_json = os.environ.get("FIREBASE_KEY")
             if key_json:
@@ -42,17 +44,16 @@ try:
 except:
     db = None
 
-# --- 채팅 기록 초기화 (새로고침 해도 대화 유지) ---
+# 채팅 기록 초기화
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 # 4. 화면 구성 (UI)
 st.title("🐯 든든 타이거 (Cloud 버전)")
 
-# 탭 3개로 확장
 tab1, tab2, tab3 = st.tabs(["🐯 인사 나누기", "📸 식단 분석하기", "💬 영양 상담소"])
 
-# --- 탭 1: 인사 및 정보 입력 ---
+# --- 탭 1: 인사 및 정보 입력 (BMI 포함) ---
 with tab1:
     st.subheader("어르신, 기본 정보를 알려주세요!")
     
@@ -69,9 +70,33 @@ with tab1:
     with col4:
         weight = st.number_input("몸무게 (kg)", min_value=0, value=60)
 
+    # BMI 자동 계산 및 표시
+    if height > 0 and weight > 0:
+        height_m = height / 100
+        bmi = weight / (height_m ** 2)
+        
+        if bmi < 18.5:
+            status = "저체중"
+            color = "blue"
+        elif bmi < 23:
+            status = "정상"
+            color = "green"
+        elif bmi < 25:
+            status = "과체중"
+            color = "orange"
+        else:
+            status = "비만"
+            color = "red"
+            
+        st.info(f"📏 현재 신체 질량 지수(BMI): **{bmi:.1f}** ({status})")
+    else:
+        bmi = 0
+        status = "정보 없음"
+
     goals = st.multiselect("건강 목표", ["체중 감량", "근육 유지", "활력 증진", "만성질환 관리"], ["활력 증진"])
     
     if st.button("인사 건네기 👋"):
+        # AI에게 BMI 정보 전달
         prompt = f"""
         당신은 시니어 헬스케어 앱의 마스코트 '든든 타이거'입니다.
         사용자 정보:
@@ -79,16 +104,19 @@ with tab1:
         - 나이: {age}세
         - 성별: {gender}
         - 신체: {height}cm, {weight}kg
+        - BMI: {bmi:.1f} ({status} 단계)
         - 목표: {', '.join(goals)}
         
-        위 정보를 바탕으로 어르신에게 씩씩하고 다정한 환영 인사를 건네고, 건강 목표를 달성할 수 있도록 짧은 응원의 말을 해주세요.
+        위 정보를 바탕으로 어르신에게 씩씩하고 다정한 환영 인사를 건네세요.
+        특히 BMI 상태({status})를 고려하여, 건강 목표 달성을 위한 짧고 따뜻한 조언을 덧붙여주세요.
         """
         
-        with st.spinner("호랑이가 인사말을 생각 중입니다..."):
+        with st.spinner("호랑이가 건강 상태를 살피는 중입니다..."):
             try:
                 res = model.generate_content(prompt)
                 st.success(res.text)
                 
+                # DB 저장 (모든 정보 기록)
                 if db:
                     doc_ref = db.collection(u'users').document(nickname)
                     doc_ref.set({
@@ -97,15 +125,16 @@ with tab1:
                         u'gender': gender,
                         u'height': height,
                         u'weight': weight,
+                        u'bmi': bmi,
                         u'goals': goals,
                         u'last_login': datetime.now(),
                         u'last_message': res.text
                     }, merge=True)
-                    st.caption("✅ 내 정보가 클라우드에 안전하게 기록되었습니다.")
+                    st.caption("✅ 내 정보(BMI 포함)가 클라우드에 안전하게 기록되었습니다.")
             except Exception as e:
                 st.error(f"에러가 발생했습니다: {e}")
 
-# --- 탭 2: 식단 분석 ---
+# --- 탭 2: 식단 분석 (전문가 프롬프트) ---
 with tab2:
     st.subheader("오늘 드신 음식을 보여주세요")
     uploaded_file = st.file_uploader("사진 업로드", type=["jpg", "png", "jpeg"])
@@ -117,6 +146,7 @@ with tab2:
                 try:
                     img = PIL.Image.open(uploaded_file)
                     
+                    # 안전 필터 해제
                     safety_settings = {
                         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -146,33 +176,31 @@ with tab2:
                     res = model.generate_content([system_prompt, img], safety_settings=safety_settings)
                     st.info(res.text)
                     
-                    # 분석 결과를 채팅 기록에도 추가해서 상담에서 이어지게 함
-                    st.session_state.chat_history.append({"role": "model", "text": f"방금 드신 음식 분석 결과입니다:\n{res.text}"})
+                    # 분석 결과를 채팅 기록에 추가 (상담 연동)
+                    st.session_state.chat_history.append({"role": "model", "text": f"식단 분석 결과:\n{res.text}"})
 
                 except Exception as e:
                     st.error(f"앗! 오류가 발생했습니다: {e}")
 
-# --- 탭 3: 영양 상담소 (채팅 기능) ---
+# --- 탭 3: 영양 상담소 (챗봇) ---
 with tab3:
     st.subheader("💬 무엇이든 물어보세요")
     st.caption("방금 분석한 식단에 대해 물어보거나, 평소 궁금한 건강 상식을 물어보세요!")
 
-    # 1. 기존 대화 내용 표시
+    # 대화 기록 표시
     for message in st.session_state.chat_history:
         with st.chat_message(message["role"]):
             st.markdown(message["text"])
 
-    # 2. 사용자 입력 받기
+    # 사용자 입력
     if prompt := st.chat_input("예: 고혈압이 있는데 국물 마셔도 되나요?"):
-        # 사용자 메시지 표시 및 저장
         st.chat_message("user").markdown(prompt)
         st.session_state.chat_history.append({"role": "user", "text": prompt})
 
-        # 3. AI 응답 생성
         with st.chat_message("model"):
             with st.spinner("호랑이 영양사가 답변을 준비 중입니다..."):
                 try:
-                    # 채팅 전용 페르소나 설정
+                    # 채팅용 페르소나
                     chat_system_prompt = f"""
                     당신은 30년 경력의 세계 최고 임상영양사 '든든 타이거'입니다.
                     사용자({nickname} 어르신)와 대화하고 있습니다.
@@ -184,33 +212,7 @@ with tab3:
                     4. 이전 대화 내용을 기억하고 연결해서 답변하세요.
                     """
                     
-                    # 대화 기록을 모델에 전달할 형식으로 변환
-                    history = [{"role": "user", "parts": [chat_system_prompt]}] # 시스템 프롬프트를 첫 메시지로 심음
-                    for msg in st.session_state.chat_history:
-                        role = "user" if msg["role"] == "user" else "model"
-                        history.append({"role": role, "parts": [msg["text"]]})
-                    
-                    # Gemini Pro 채팅 모델 시작
-                    chat = model.start_chat(history=history)
-                    
-                    # 마지막 질문은 이미 history에 포함시켰으므로, 여기서는 빈 메시지로 트리거하거나
-                    # SDK 특성상 history에 넣지 말고 send_message를 쓰는 게 나음.
-                    # 방식 수정: history는 이전 것까지만 넣고, 이번 메시지를 send_message로 보냄.
-                    
-                    chat_model = genai.GenerativeModel('models/gemini-2.5-flash')
-                    chat = chat_model.start_chat(history=[])
-                    
-                    # 시스템 프롬프트 먼저 주입
-                    chat.send_message(chat_system_prompt)
-                    
-                    # 이전 대화 복원 (시스템 프롬프트 이후)
-                    for msg in st.session_state.chat_history[:-1]: # 이번 질문 제외
-                        role = "user" if msg["role"] == "user" else "model"
-                        # model 역할의 메시지는 history에 직접 넣거나 해야 하는데,
-                        # 간단하게는 전체 텍스트를 프롬프트로 묶어서 보내는 게 낫습니다.
-                        pass 
-
-                    # 가장 확실한 방법: 전체 대화 맥락을 텍스트로 묶어서 보냄 (Streamlit 방식)
+                    # 전체 대화 맥락 구성
                     full_prompt = chat_system_prompt + "\n\n[이전 대화]\n"
                     for msg in st.session_state.chat_history:
                         speaker = "어르신" if msg["role"] == "user" else "든든 타이거"
@@ -218,10 +220,8 @@ with tab3:
                     
                     full_prompt += f"\n든든 타이거(답변):"
                     
-                    response = chat_model.generate_content(full_prompt)
+                    response = model.generate_content(full_prompt)
                     st.markdown(response.text)
-                    
-                    # AI 응답 저장
                     st.session_state.chat_history.append({"role": "model", "text": response.text})
                     
                 except Exception as e:
