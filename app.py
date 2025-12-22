@@ -15,17 +15,23 @@ API_KEY = "AIzaSyBfTxbOmHDo8Pqq1-o6QLUCam_x9AahbuQ"
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
-# 3. 데이터베이스 연결 (클라우드 환경 고려)
-# secrets.json 파일이 있으면 그걸 쓰고, 없으면(클라우드) 환경 변수 등 다른 방법 사용
+# 3. 데이터베이스 연결 (똑똑한 연결 방식)
 if not firebase_admin._apps:
     try:
-        # 내 컴퓨터에서 실행할 때
+        # 1) 내 컴퓨터: secrets.json 파일이 있으면 그걸 쓴다
         if os.path.exists("secrets.json"):
             cred = credentials.Certificate("secrets.json")
             firebase_admin.initialize_app(cred)
-        # 클라우드에 배포했을 때 (나중에 설정할 부분)
+        # 2) 클라우드: 파일이 없으면 '환경변수'에 있는 암호를 쓴다
         else:
-            st.warning("⚠️ DB 연결 키를 찾을 수 없습니다. (데이터 저장이 안 될 수 있어요)")
+            # 환경변수에서 키 꺼내기 (문자열 -> 딕셔너리 변환)
+            key_json = os.environ.get("FIREBASE_KEY")
+            if key_json:
+                cred_dict = json.loads(key_json)
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred)
+            else:
+                st.warning("⚠️ DB 연결 키를 찾을 수 없습니다.")
     except Exception as e:
         st.error(f"DB 연결 오류: {e}")
 
