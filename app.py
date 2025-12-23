@@ -175,7 +175,7 @@ with tab1:
             st.error(f"오류: {e}")
 
 # ---------------------------------------------------------
-# [탭 2] 식단 기록 및 분석 (정밀 분석 프롬프트)
+# [탭 2] 식단 기록 및 분석 (상담소 연동 기능 추가)
 # ---------------------------------------------------------
 with tab2:
     st.subheader("📸 식사를 기록하고 분석해요")
@@ -191,33 +191,25 @@ with tab2:
     if uploaded_file:
         st.image(uploaded_file, width=300)
         
-        if st.button("정밀 분석 및 저장 💾"):
-            with st.spinner("나트륨, 당류, 비타민까지 꼼꼼히 분석 중입니다..."):
+        # 버튼 이름도 최신 모델 반영해서 살짝 바꿨습니다
+        if st.button("Gemini 3 정밀 분석 ⚡"):
+            with st.spinner("호랑이가 빛의 속도로 분석 중입니다..."):
                 try:
                     img = PIL.Image.open(uploaded_file)
                     safety_settings = {HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE}
                     
-                    # [핵심] 추가 영양소 요청 프롬프트
                     system_prompt = f"""
-                    당신은 임상영양사 '든든 타이거'입니다. 사진 속 음식을 정밀 분석하세요.
-                    
-                    [필수 요청 사항]
-                    반드시 아래 **JSON 형식**으로만 응답해야 합니다.
-                    값은 추정치(정수)로 입력하세요.
+                    당신은 임상영양사 '든든 타이거'입니다. 
+                    반드시 아래 **JSON 형식**으로만 응답하세요. 값은 정수입니다.
                     
                     {{
                         "food_name": "음식 이름",
                         "calories": 000,
-                        "carbs": 00,        // 탄수화물 (g)
-                        "protein": 00,      // 단백질 (g)
-                        "fat": 00,          // 지방 (g)
-                        "sugar": 00,        // 당류 (g)
-                        "sodium": 000,      // 나트륨 (mg) - 국물 포함 여부 고려
-                        "cholesterol": 000, // 콜레스테롤 (mg)
-                        "calcium": 000,     // 칼슘 (mg)
-                        "vitamin_info": "비타민 C, D 등 풍부한 영양소와 효능 요약 (한 문장)",
-                        "analysis": "종합 영양 평가 (3문장 이내)",
-                        "tips": "시니어를 위한 섭취 팁 1가지"
+                        "carbs": 00, "protein": 00, "fat": 00, 
+                        "sugar": 00, "sodium": 000, "cholesterol": 000, "calcium": 000,
+                        "vitamin_info": "비타민 정보 요약",
+                        "analysis": "분석 내용",
+                        "tips": "건강 팁"
                     }}
                     """
                     
@@ -228,23 +220,24 @@ with tab2:
                         st.divider()
                         st.markdown(f"### 🍱 {data['food_name']}")
                         
-                        # 3단 구성 표시
                         c1, c2, c3 = st.columns(3)
-                        c1.metric("🔥 칼로리", f"{data['calories']} kcal")
-                        c2.metric("🍚 탄수화물", f"{data['carbs']} g")
-                        c3.metric("🥩 단백질", f"{data['protein']} g")
+                        c1.metric("칼로리", f"{data['calories']} kcal")
+                        c2.metric("나트륨", f"{data['sodium']} mg")
+                        c3.metric("당류", f"{data['sugar']} g")
                         
-                        c4, c5, c6 = st.columns(3)
-                        c4.metric("🧈 지방", f"{data['fat']} g")
-                        c5.metric("🍭 당류", f"{data['sugar']} g")
-                        c6.metric("🧂 나트륨", f"{data['sodium']} mg") # 나트륨 중요!
+                        st.info(f"💊 {data['vitamin_info']}")
+                        st.success(f"💡 {data['tips']}")
                         
-                        c7, c8 = st.columns(2)
-                        c7.metric("🥚 콜레스테롤", f"{data['cholesterol']} mg")
-                        c8.metric("🦴 칼슘", f"{data['calcium']} mg")
-                        
-                        st.info(f"💊 **비타민/미네랄:** {data['vitamin_info']}")
-                        st.success(f"💡 **타이거 팁:** {data['tips']}")
+                        # [핵심 추가] 분석 결과를 채팅 기록(상담소)으로 토스! 
+                        # 이렇게 해야 상담소 탭에서 기억합니다.
+                        chat_summary = f"""
+                        [방금 식단 분석 결과]
+                        메뉴: {data['food_name']}
+                        칼로리: {data['calories']}kcal
+                        영양소: 탄수화물 {data['carbs']}g, 단백질 {data['protein']}g, 지방 {data['fat']}g, 나트륨 {data['sodium']}mg, 당류 {data['sugar']}g
+                        타이거 조언: {data['analysis']} ({data['tips']})
+                        """
+                        st.session_state.chat_history.append({"role": "model", "text": chat_summary})
                         
                         # DB 저장
                         if db:
@@ -255,24 +248,19 @@ with tab2:
                                 "meal_type": meal_type,
                                 "food_name": data['food_name'],
                                 "calories": data['calories'],
-                                "carbs": data['carbs'],
-                                "protein": data['protein'],
-                                "fat": data['fat'],
-                                "sugar": data.get('sugar', 0),
-                                "sodium": data.get('sodium', 0),
-                                "cholesterol": data.get('cholesterol', 0),
-                                "calcium": data.get('calcium', 0),
+                                "carbs": data['carbs'], "protein": data['protein'], "fat": data['fat'],
+                                "sugar": data.get('sugar', 0), "sodium": data.get('sodium', 0),
+                                "cholesterol": data.get('cholesterol', 0), "calcium": data.get('calcium', 0),
                                 "vitamin_info": data.get('vitamin_info', ''),
                                 "timestamp": datetime.now()
                             }
                             db.collection('users').document(nickname).collection('diet_logs').add(log_data)
-                            st.toast("상세 영양 정보가 저장되었습니다!", icon="✅")
-                            
+                            st.toast("저장 및 상담소 연동 완료!", icon="✅")
                     else:
-                        st.error("데이터 분석 실패. 다시 시도해주세요.")
+                        st.error("분석 실패. 다시 시도해주세요.")
 
                 except Exception as e:
-                    st.error(f"오류 발생: {e}")
+                    st.error(f"오류: {e}")
 
 # ---------------------------------------------------------
 # [탭 3] 건강 보고서 (그래프 분리)
