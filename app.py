@@ -105,30 +105,35 @@ st.title("🐯 든든 타이거 (이어하기 기능 탑재)")
 tab1, tab2, tab3, tab4 = st.tabs(["🐯 인사 나누기", "📸 식단 기록/분석", "📊 건강 보고서", "💬 영양 상담소"])
 
 # ---------------------------------------------------------
-# [탭 1] 인사 및 정보 입력 (불러오기 기능 추가)
+# [탭 1] 인사 및 정보 입력 (안전장치 추가 버전)
 # ---------------------------------------------------------
 with tab1:
     st.subheader("어르신, 성함(닉네임)을 알려주세요")
     
-    # 닉네임 입력 후 엔터 치면 로드 시도
     col_nick, col_btn = st.columns([3, 1])
     with col_nick:
-        input_nickname = st.text_input("닉네임 입력 후 엔터 ↵", st.session_state.user_info["nickname"])
+        # 불러오기용 입력창
+        input_nickname = st.text_input("닉네임 입력 후 엔터 ↵", st.session_state.user_info.get("nickname", ""))
     with col_btn:
         if st.button("내 정보 불러오기 📂"):
             if load_user_data(input_nickname):
-                st.success(f"{input_nickname}님, 어서오세요! 정보를 불러왔습니다.")
-                st.rerun() # 화면 새로고침해서 정보 반영
+                st.success(f"✅ {input_nickname}님의 정보를 불러왔습니다!")
+                st.rerun() # 화면 새로고침하여 데이터 반영
             else:
-                st.warning("등록된 정보가 없습니다. 새로 입력해주세요.")
+                st.warning("등록된 정보가 없습니다.")
 
     st.divider()
     st.subheader("📝 상세 정보 수정")
     
     col1, col2 = st.columns(2)
     with col1:
-        # 세션에 저장된 값들을 기본값(value)으로 설정
-        nickname = st.text_input("닉네임(확인)", input_nickname, key="nick_confirm")
+        # [수정 1] 불러온 세션 정보(user_info)를 value에 직접 연결하여 빈 값 방지
+        current_nick = st.session_state.user_info.get("nickname", "")
+        # 만약 세션에 없으면 위에서 입력한 값이라도 가져옴
+        if not current_nick:
+            current_nick = input_nickname
+            
+        nickname = st.text_input("닉네임(확인)", value=current_nick, key="nick_confirm")
         age = st.number_input("나이 (세)", 0, 120, st.session_state.user_info["age"])
     with col2:
         gender_index = 0 if st.session_state.user_info["gender"] == "남성" else 1
@@ -140,7 +145,7 @@ with tab1:
     with col4:
         weight = st.number_input("몸무게 (kg)", 0, 200, st.session_state.user_info["weight"])
 
-    # 값 갱신
+    # 세션 상태 갱신
     st.session_state.user_info = {"nickname": nickname, "age": age, "gender": gender, "height": height, "weight": weight}
 
     if height > 0 and weight > 0:
@@ -161,27 +166,32 @@ with tab1:
 
     goals = st.multiselect("건강 목표", ["체중 감량", "근육 유지", "혈당 관리", "혈압 관리", "뼈 건강"], ["혈당 관리"])
     
-    if st.button("정보 저장 및 인사 받기 👋"):
-        prompt = f"""
-        당신은 시니어 헬스케어 마스코트 '든든 타이거'입니다.
-        사용자: {nickname}, {age}세, {gender}, BMI {bmi:.1f}({status}).
-        목표: {', '.join(goals)}.
-        어서오세요 인사를 해주세요.
-        """
-        try:
-            res = model.generate_content(prompt)
-            st.success(res.text)
-            
-            if db:
-                db.collection(u'users').document(nickname).set({
-                    u'info': st.session_state.user_info,
-                    u'needs': needs,
-                    u'goals': goals,
-                    u'last_login': datetime.now()
-                }, merge=True)
-                st.caption("✅ 정보가 안전하게 저장되었습니다.")
-        except Exception as e:
-            st.error(f"오류: {e}")
+    if st.button("설정 저장 및 인사 👋"):
+        # [수정 2] 핵심 안전장치: 닉네임이 비어있으면 절대 DB로 넘어가지 않음
+        if not nickname or nickname.strip() == "":
+            st.error("⚠️ 닉네임이 비어있습니다! 위 칸에 닉네임을 입력해주세요.")
+        else:
+            prompt = f"""
+            당신은 시니어 헬스케어 마스코트 '든든 타이거'입니다.
+            사용자: {nickname}, {age}세, {gender}, BMI {bmi:.1f}({status}).
+            목표: {', '.join(goals)}.
+            어서오세요 인사를 해주세요.
+            """
+            try:
+                res = model.generate_content(prompt)
+                st.success(res.text)
+                
+                if db:
+                    # 이제 nickname이 확실히 있으므로 에러가 나지 않습니다.
+                    db.collection(u'users').document(nickname).set({
+                        u'info': st.session_state.user_info,
+                        u'needs': needs,
+                        u'goals': goals,
+                        u'last_login': datetime.now()
+                    }, merge=True)
+                    st.caption("✅ 정보가 안전하게 저장되었습니다.")
+            except Exception as e:
+                st.error(f"오류 발생: {e}")
 
 # ---------------------------------------------------------
 # [탭 2] 식단 기록 및 분석
