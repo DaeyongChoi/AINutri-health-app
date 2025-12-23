@@ -22,7 +22,7 @@ db = firestore.client() # 공책(DB) 열기
 
 # 2. AI(Gemini) 설정
 # [중요] 여기에 본인의 API 키를 넣어주세요!
-genai.configure(api_key="AIzaSyBfTxbOmHDo8Pqq1-o6QLUCam_x9AahbuQ")
+genai.configure(api_key="API_키_여기에_붙여넣기")
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
 app = FastAPI(title="든든 타이거")
