@@ -3,7 +3,7 @@ import google.generativeai as genai
 # ==========================================
 # 아까 그 긴 API 키를 여기에 다시 붙여넣으세요!
 # ==========================================
-genai.configure(api_key="AIzaSyBfTxbOmHDo8Pqq1-o6QLUCam_x9AahbuQ")
+genai.configure(api_key="AIzaSyDCOazMzSe7Ws2Ceyd-g_GiqYXa3M9mVBE")
 
 print("🔎 내 키로 주문 가능한 모델 목록을 조회합니다...")
 print("-" * 30)

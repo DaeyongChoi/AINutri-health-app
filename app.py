@@ -20,7 +20,17 @@ else:
     st.error("⚠️ API 키가 없습니다. 구글 클라우드 설정을 확인해주세요.")
 
 # 모델 설정
-model = genai.GenerativeModel('models/gemini-2.5-flash')
+# model = genai.GenerativeModel('models/gemini-2.5-flash')
+
+# 모델 설정 (2025년 12월 17일 출시된 최신상 모델!)
+# PhD급 추론 능력을 가진 초고속 모델입니다.
+model = genai.GenerativeModel('models/gemini-3-flash-preview')
+
+# [추가할 코드] 사이드바에 모델 이름 표시하기
+with st.sidebar:
+    st.header("🔧 개발자 모드")
+    # model.model_name 변수에 현재 설정된 모델 이름이 들어있습니다.
+    st.info(f"🚀 현재 모델: **{model.model_name}**")
 
 # 3. 데이터베이스 연결
 if not firebase_admin._apps:
