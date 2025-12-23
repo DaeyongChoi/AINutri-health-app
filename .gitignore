@@ -1,5 +1,7 @@
 # .gitignore 파일 내용
 secrets.json
+check.py
+check_models.py
 __pycache__/
 venv/
 .env
